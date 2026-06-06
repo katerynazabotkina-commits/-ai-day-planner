@@ -128,10 +128,13 @@ export default function CapturePage() {
         </div>
       )}
 
+      {/* FIX 4: visible counter — was text-xs gray-400, now readable */}
       {lines.length > 0 && !busy && (
-        <p className="px-5 mt-2 text-xs text-gray-400 flex-none">
-          {lines.length} {lines.length === 1 ? 'думка' : lines.length < 5 ? 'думки' : 'думок'}
-        </p>
+        <div className="mx-4 mt-2 flex-none">
+          <span className="text-sm font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
+            {lines.length} {lines.length === 1 ? 'думка' : lines.length < 5 ? 'думки' : 'думок'} готові до обробки
+          </span>
+        </div>
       )}
 
       <div className="px-4 pt-3 pb-4 flex items-center gap-3 flex-none">
