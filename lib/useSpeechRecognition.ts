@@ -25,7 +25,7 @@ export function useSpeechRecognition({ onFinalResult }: Options) {
     r.continuous     = false;   // iOS ignores true
     r.interimResults = true;
 
-    r.onstart = () => { setIsRecording(true); setError(null); };
+    r.onstart = () => { setError(null); };
 
     r.onerror = (e: any) => {
       if (e.error === 'not-allowed') {
@@ -74,7 +74,8 @@ export function useSpeechRecognition({ onFinalResult }: Options) {
     }
     setError(null);
     wantsOn.current = true;
-    startSession();           // let browser ask for permission itself
+    setIsRecording(true); // immediate feedback — don't wait for onstart
+    startSession();
   }, [startSession]);
 
   const stop = useCallback(() => {
