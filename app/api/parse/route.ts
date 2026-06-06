@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
     if (error instanceof Anthropic.RateLimitError) {
       return NextResponse.json({ error: 'Rate limited — try again shortly' }, { status: 429 });
     }
-    console.error('[api/parse]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('[api/parse]', msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
