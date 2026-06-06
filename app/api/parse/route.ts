@@ -1,8 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
-const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
-
 const SYSTEM = `Ти — асистент-планувальник. Користувач накидав хаотичний список думок
 і задач. Розбий його на окремі задачі. Для кожної визнач:
 - title: коротке формулювання задачі
@@ -35,6 +33,7 @@ export async function POST(request: NextRequest) {
   const today = new Date().toISOString().slice(0, 10);
 
   try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await client.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 1024,
