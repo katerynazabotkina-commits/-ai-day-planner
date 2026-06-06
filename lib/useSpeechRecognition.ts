@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface UseSpeechRecognitionOptions {
   onFinalResult: (text: string) => void;
@@ -8,10 +8,22 @@ interface UseSpeechRecognitionOptions {
 
 export type MicStatus = 'idle' | 'requesting' | 'listening' | 'error';
 
+// Detect iOS once on the client
+function detectIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOptions) {
   const [status, setStatus] = useState<MicStatus>('idle');
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => { setIsIOS(detectIOS()); }, []);
 
   const wantsRecording = useRef(false);
   const recognitionRef = useRef<any>(null);
@@ -34,9 +46,8 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
       if (e.error === 'not-allowed') {
         wantsRecording.current = false;
         setStatus('error');
-        setError('Доступ відхилено. Налаштування → Safari → Мікрофон → Дозволити.');
+        setError('Доступ відхилено.');
       }
-      // 'no-speech' / 'aborted' are normal — onend will restart
     };
 
     r.onresult = (e: any) => {
@@ -54,7 +65,6 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
     r.onend = () => {
       setInterim('');
       if (wantsRecording.current) {
-        // iOS ends every utterance — restart after a short gap
         setTimeout(() => { if (wantsRecording.current) startSession(); }, 200);
       } else {
         setStatus('idle');
@@ -62,43 +72,31 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
     };
 
     recognitionRef.current = r;
-    try {
-      r.start();
-    } catch (err) {
+    try { r.start(); } catch {
       wantsRecording.current = false;
       setStatus('error');
-      setError('Не вдалося запустити мікрофон — спробуй ще раз.');
+      setError('Не вдалося запустити мікрофон.');
     }
   }, []);
 
   const start = useCallback(async () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      setError('Потрібен Safari 14.5+ або Chrome.');
-      setStatus('error');
-      return;
-    }
+    if (!SR) { setError('Потрібен Chrome або Firefox.'); setStatus('error'); return; }
 
     setError(null);
     setStatus('requesting');
 
-    // Ask for mic permission via getUserMedia, then IMMEDIATELY release —
-    // on iOS, keeping the stream open blocks SpeechRecognition from the mic.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop()); // release right away
+      stream.getTracks().forEach(t => t.stop());
     } catch (err: any) {
-      const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
-      setError(denied
-        ? 'Доступ відхилено. Налаштування → Safari → Мікрофон → Дозволити.'
-        : `Помилка мікрофона: ${err?.message ?? err}`);
+      const denied = err?.name === 'NotAllowedError';
+      setError(denied ? 'Доступ відхилено.' : `Помилка: ${err?.message}`);
       setStatus('error');
       return;
     }
 
-    // Small pause so iOS fully releases the mic before SpeechRecognition takes it
-    await new Promise(resolve => setTimeout(resolve, 300));
-
+    await new Promise(r => setTimeout(r, 300));
     wantsRecording.current = true;
     startSession();
   }, [startSession]);
@@ -115,6 +113,7 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
   }, [start, stop]);
 
   return {
+    isIOS,
     isRecording: status === 'listening' || status === 'requesting',
     isRequesting: status === 'requesting',
     interim,
