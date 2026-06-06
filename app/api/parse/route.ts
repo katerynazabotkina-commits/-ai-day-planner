@@ -3,25 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
-// Stable system prompt — marked for prompt caching.
-// (Haiku 4.5 needs ≥4096 tokens to cache; marker is there for when prompt grows.)
-const SYSTEM = `You extract actionable tasks from a user's brain dump.
-Return ONLY a raw JSON array — no markdown fences, no explanation, nothing else.
+const SYSTEM = `Ти — асистент-планувальник. Користувач накидав хаотичний список думок
+і задач. Розбий його на окремі задачі. Для кожної визнач:
+- title: коротке формулювання задачі
+- priority: "must" якщо терміново/важливо, інакше "nice"
+- estimateMin: реалістична оцінка в хвилинах
+- deadline: дата у форматі YYYY-MM-DD, якщо в тексті є час/день; інакше null
 
-Each element must have exactly these fields:
-{
-  "title": string,               // concise action title, same language as input, ≤60 chars
-  "priority": "must" | "nice",   // "must" = urgent/important, "nice" = optional/someday
-  "estimateMin": number,         // estimated minutes to complete, integer ≥ 5
-  "deadline": "YYYY-MM-DD" | null  // date if explicitly or implicitly mentioned, else null
-}
-
-Rules:
-- Extract only concrete actionable tasks, skip vague musings
-- Infer priority from words like: срочно, важливо, треба, must, urgent, deadline
-- Infer deadline from: сьогодні, завтра, до п'ятниці, next week, by Monday, etc.
-- Resolve relative dates using today's date (provided by the user)
-- If no tasks found return: []`;
+Поверни ТІЛЬКИ валідний JSON-масив, без пояснень і без markdown.`;
 
 export interface ParsedTask {
   title: string;
@@ -59,7 +48,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `Today is ${today}.\n\n${dump}`,
+          content: `Сьогодні: ${today}.\n\nТекст користувача:\n"""\n${dump}\n"""`,
         },
       ],
     });
