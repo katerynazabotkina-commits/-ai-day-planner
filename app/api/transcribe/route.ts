@@ -1,12 +1,17 @@
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: 'OPENAI_API_KEY не налаштований' }, { status: 500 });
-  }
+// Groq gives free Whisper access — just swap the base URL and key.
+// Sign up at console.groq.com, no credit card needed.
+const client = new OpenAI({
+  apiKey:  process.env.GROQ_API_KEY ?? '',
+  baseURL: 'https://api.groq.com/openai/v1',
+});
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export async function POST(request: NextRequest) {
+  if (!process.env.GROQ_API_KEY) {
+    return NextResponse.json({ error: 'GROQ_API_KEY не налаштований' }, { status: 500 });
+  }
 
   let formData: FormData;
   try {
@@ -21,9 +26,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const transcription = await openai.audio.transcriptions.create({
-      file: audio,
-      model: 'whisper-1',
+    const transcription = await client.audio.transcriptions.create({
+      file:     audio,
+      model:    'whisper-large-v3-turbo', // Groq's fastest free Whisper model
       language: 'uk',
     });
     return NextResponse.json({ text: transcription.text });
