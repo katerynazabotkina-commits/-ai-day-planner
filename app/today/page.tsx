@@ -56,6 +56,16 @@ export default function TodayPage() {
   const doneTasks = todayTasks.filter(t => t.done);
   const progress = todayTasks.length > 0 ? (doneTasks.length / todayTasks.length) * 100 : 0;
 
+  const remainingMin = todayTasks.filter(t => !t.done).reduce((s, t) => s + t.estimateMin, 0);
+  const MAX_MIN = 8 * 60;
+  const isOverloaded = remainingMin > MAX_MIN;
+
+  const fmtHours = (min: number) => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `${h} год ${m} хв` : `${h} год`;
+  };
+
   const dateStr = new Date().toLocaleDateString('uk-UA', {
     weekday: 'long', day: 'numeric', month: 'long',
   });
@@ -70,12 +80,26 @@ export default function TodayPage() {
             : `${doneTasks.length} з ${todayTasks.length} виконано`}
         </p>
         {todayTasks.length > 0 && (
-          // FIX 5: thicker progress bar, easier to see
           <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
               className="h-full bg-indigo-500 rounded-full transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
+          </div>
+        )}
+
+        {/* Overload warning */}
+        {isOverloaded && (
+          <div className="mt-3 flex items-start gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-2xl">
+            <span className="text-lg flex-none">⚠️</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">
+                Задач на {fmtHours(remainingMin)}, а реалістично — {fmtHours(MAX_MIN)}
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Перенеси зайве назад до Inbox
+              </p>
+            </div>
           </div>
         )}
       </header>
