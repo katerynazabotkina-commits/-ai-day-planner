@@ -26,8 +26,8 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
     if (!SpeechRecognition) return null;
 
     const r = new SpeechRecognition();
-    r.lang = 'uk-UA';
-    // iOS Safari ignores continuous:true — we restart manually in onend instead.
+    // Don't force a language — use whatever speech locale the device has active.
+    // Forcing uk-UA fails silently on iOS if that language pack isn't installed.
     r.continuous = false;
     r.interimResults = true;
 

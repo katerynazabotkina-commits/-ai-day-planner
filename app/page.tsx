@@ -53,7 +53,7 @@ export default function CapturePage() {
             placeholder="Зустріч з Марком о 15:00&#10;Купити: молоко, яйця, хліб&#10;Позвонити лікарю&#10;Дописати звіт до п'ятниці..."
             className="w-full h-full min-h-64 text-base text-gray-800 placeholder-gray-300 bg-gray-50 rounded-2xl p-4 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white transition-colors leading-relaxed"
           />
-          {/* Interim speech preview inside textarea */}
+          {/* Interim speech preview */}
           {interim && (
             <div className="absolute bottom-3 left-3 right-3 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 pointer-events-none">
               <p className="text-sm text-indigo-400 italic leading-snug">{interim}…</p>
@@ -61,6 +61,19 @@ export default function CapturePage() {
           )}
         </div>
       </div>
+
+      {/* Recording status banner */}
+      {isRecording && !error && (
+        <div className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl flex-none">
+          <span className="relative flex h-3 w-3 flex-none">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+          </span>
+          <p className="text-sm text-red-600 font-medium">
+            {interim ? interim + '…' : 'Слухаю… говори зараз'}
+          </p>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -70,7 +83,7 @@ export default function CapturePage() {
       )}
 
       {/* Count hint */}
-      {lines.length > 0 && !error && (
+      {lines.length > 0 && !isRecording && !error && (
         <p className="px-5 mt-2 text-xs text-gray-400 flex-none">
           {lines.length} {lines.length === 1 ? 'думка' : lines.length < 5 ? 'думки' : 'думок'} готові
         </p>
@@ -88,7 +101,6 @@ export default function CapturePage() {
           }`}
           aria-label={isRecording ? 'Зупинити запис' : 'Почати голосовий ввід'}
         >
-          {/* Pulse ring when recording */}
           {isRecording && (
             <span className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-30" />
           )}
@@ -107,14 +119,23 @@ export default function CapturePage() {
           </svg>
         </button>
 
-        {/* Parse button */}
-        <button
-          onClick={handleParse}
-          disabled={lines.length === 0}
-          className="flex-1 h-14 bg-indigo-600 disabled:bg-gray-100 text-white disabled:text-gray-400 rounded-2xl font-semibold text-base transition-all active:scale-95 active:bg-indigo-700 disabled:cursor-not-allowed"
-        >
-          {lines.length === 0 ? 'Введи думки вище' : `Додати до Inbox (${lines.length})`}
-        </button>
+        {/* Parse / Stop button */}
+        {isRecording ? (
+          <button
+            onClick={toggle}
+            className="flex-1 h-14 bg-gray-800 text-white rounded-2xl font-semibold text-base transition-all active:scale-95"
+          >
+            Зупинити запис
+          </button>
+        ) : (
+          <button
+            onClick={handleParse}
+            disabled={lines.length === 0}
+            className="flex-1 h-14 bg-indigo-600 disabled:bg-gray-100 text-white disabled:text-gray-400 rounded-2xl font-semibold text-base transition-all active:scale-95 active:bg-indigo-700 disabled:cursor-not-allowed"
+          >
+            {lines.length === 0 ? 'Введи думки вище' : `Додати до Inbox (${lines.length})`}
+          </button>
+        )}
       </div>
     </div>
   );
