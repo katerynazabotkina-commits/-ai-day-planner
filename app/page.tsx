@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTasks } from '@/lib/TaskContext';
-import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
+import { useAudioRecorder } from '@/lib/useAudioRecorder';
 import type { ParsedTask } from '@/app/api/parse/route';
 
 type ParseStatus = 'idle' | 'parsing' | 'error';
@@ -12,6 +12,7 @@ export default function CapturePage() {
   const [input, setInput]       = useState('');
   const [parseStatus, setPS]    = useState<ParseStatus>('idle');
   const [apiError, setApiError] = useState('');
+  const [micError, setMicError] = useState('');
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const { addParsedTasks }      = useTasks();
   const router                  = useRouter();
@@ -26,8 +27,9 @@ export default function CapturePage() {
     }, 0);
   }, []);
 
-  const { isRecording, interim, error: micError, toggle } = useSpeechRecognition({
-    onFinalResult: appendText,
+  const { isRecording, isTranscribing, toggle } = useAudioRecorder({
+    onResult: appendText,
+    onError:  setMicError,
   });
 
   const lines = input.split('\n').map(l => l.trim()).filter(Boolean);
@@ -36,7 +38,6 @@ export default function CapturePage() {
     if (!lines.length) return;
     setPS('parsing');
     setApiError('');
-
     try {
       const res = await fetch('/api/parse', {
         method: 'POST',
@@ -59,48 +60,50 @@ export default function CapturePage() {
     }
   };
 
+  const busy = isRecording || isTranscribing || parseStatus === 'parsing';
+
   return (
     <div className="flex flex-col min-h-[calc(100dvh-72px)]">
 
-      {/* Header */}
       <header className="px-5 pt-12 pb-3 flex-none">
         <h1 className="text-2xl font-bold text-gray-900">Що в голові?</h1>
         <p className="text-sm text-gray-400 mt-1">
-          {isRecording ? 'Слухаю… говори' : 'Пиши або диктуй — AI розбере на задачі'}
+          {isRecording    ? '🔴 Записую… натисни ще раз щоб зупинити'
+           : isTranscribing ? '⏳ Розпізнаю мову…'
+           : 'Пиши або диктуй — AI розбере на задачі'}
         </p>
       </header>
 
-      {/* Textarea */}
       <div className="flex-1 px-4 py-2 min-h-0">
-        <div className="relative h-full">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={e => { setInput(e.target.value); if (parseStatus === 'error') setPS('idle'); }}
-            disabled={parseStatus === 'parsing'}
-            placeholder="Зустріч з Марком о 15:00&#10;Купити: молоко, яйця, хліб&#10;Дописати звіт до п'ятниці..."
-            className="w-full h-full min-h-64 text-base text-gray-800 placeholder-gray-300 bg-gray-50 rounded-2xl p-4 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white transition-colors leading-relaxed disabled:opacity-60"
-          />
-          {/* Interim text overlay */}
-          {interim && (
-            <div className="absolute bottom-3 left-3 right-3 bg-white/90 border border-indigo-100 rounded-xl px-3 py-2 pointer-events-none">
-              <p className="text-sm text-indigo-500 italic">{interim}…</p>
-            </div>
-          )}
-        </div>
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={e => { setInput(e.target.value); setMicError(''); setApiError(''); }}
+          disabled={busy}
+          placeholder="Зустріч з Марком о 15:00&#10;Купити: молоко, яйця, хліб&#10;Дописати звіт до п'ятниці..."
+          className="w-full h-full min-h-64 text-base text-gray-800 placeholder-gray-300 bg-gray-50 rounded-2xl p-4 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:bg-white transition-colors leading-relaxed disabled:opacity-60"
+        />
       </div>
 
-      {/* Status banners */}
+      {/* Banners */}
       {isRecording && (
         <div className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl flex-none">
           <span className="relative flex h-3 w-3 flex-none">
             <span className="animate-ping absolute inset-0 rounded-full bg-red-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
           </span>
-          <p className="text-sm text-red-600 font-medium flex-1">
-            {interim || 'Говори — слухаю…'}
-          </p>
+          <p className="text-sm text-red-600 font-medium flex-1">Записую… говори зараз</p>
           <button onClick={toggle} className="text-xs text-red-400 underline">зупинити</button>
+        </div>
+      )}
+
+      {isTranscribing && (
+        <div className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl flex-none">
+          <span className="relative flex h-3 w-3 flex-none">
+            <span className="animate-ping absolute inset-0 rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+          </span>
+          <p className="text-sm text-amber-700 font-medium">Whisper розпізнає мову…</p>
         </div>
       )}
 
@@ -115,30 +118,26 @@ export default function CapturePage() {
       )}
 
       {micError && (
-        <div className="mx-4 mt-2 px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl flex-none">
-          <p className="text-sm text-amber-700">{micError}</p>
+        <div className="mx-4 mt-2 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl flex-none">
+          <p className="text-sm text-red-500">{micError}</p>
         </div>
       )}
-
       {parseStatus === 'error' && apiError && (
         <div className="mx-4 mt-2 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl flex-none">
           <p className="text-sm text-red-500">{apiError}</p>
         </div>
       )}
 
-      {lines.length > 0 && !isRecording && parseStatus === 'idle' && (
+      {lines.length > 0 && !busy && (
         <p className="px-5 mt-2 text-xs text-gray-400 flex-none">
           {lines.length} {lines.length === 1 ? 'думка' : lines.length < 5 ? 'думки' : 'думок'}
         </p>
       )}
 
-      {/* Buttons */}
       <div className="px-4 pt-3 pb-4 flex items-center gap-3 flex-none">
-
-        {/* Mic */}
         <button
           onClick={toggle}
-          disabled={parseStatus === 'parsing'}
+          disabled={isTranscribing || parseStatus === 'parsing'}
           className={`relative flex-none w-14 h-14 rounded-full flex items-center justify-center shadow-md transition-all active:scale-95 ${
             isRecording
               ? 'bg-red-500 text-white'
@@ -151,19 +150,15 @@ export default function CapturePage() {
           </svg>
         </button>
 
-        {/* Parse */}
         <button
           onClick={handleParse}
-          disabled={lines.length === 0 || parseStatus === 'parsing' || isRecording}
+          disabled={lines.length === 0 || busy}
           className="flex-1 h-14 bg-indigo-600 disabled:bg-gray-100 text-white disabled:text-gray-400 rounded-2xl font-semibold text-base transition-all active:scale-95 active:bg-indigo-700 disabled:cursor-not-allowed"
         >
-          {parseStatus === 'parsing'
-            ? 'Аналізую…'
-            : lines.length === 0
-            ? 'Введи думки вище'
-            : `Розібрати з AI (${lines.length})`}
+          {parseStatus === 'parsing' ? 'Аналізую…'
+           : lines.length === 0     ? 'Введи думки вище'
+           : `Розібрати з AI (${lines.length})`}
         </button>
-
       </div>
     </div>
   );
