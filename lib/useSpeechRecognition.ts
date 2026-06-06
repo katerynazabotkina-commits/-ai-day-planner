@@ -11,8 +11,6 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Ref tracks whether the user wants recording ON — survives across
-  // recognition sessions (iOS Safari kills each session after a pause).
   const wantsRecording = useRef(false);
   const recognitionRef = useRef<any>(null);
   const onFinalResultRef = useRef(onFinalResult);
@@ -22,23 +20,19 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
-
     if (!SpeechRecognition) return null;
 
     const r = new SpeechRecognition();
-    // Don't force a language — use whatever speech locale the device has active.
-    // Forcing uk-UA fails silently on iOS if that language pack isn't installed.
-    r.continuous = false;
+    r.continuous = false;      // iOS Safari ignores true
     r.interimResults = true;
 
     r.onerror = (e: any) => {
       if (e.error === 'not-allowed') {
         wantsRecording.current = false;
         setIsRecording(false);
-        setError('Доступ до мікрофона відхилено. Дозволь у налаштуваннях браузера.');
-      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        setError(`Помилка: ${e.error}`);
+        setError('Доступ до мікрофона відхилено. Дозволь у налаштуваннях браузера → Safari → Мікрофон.');
       }
+      // 'no-speech' and 'aborted' are normal — onend will handle restart
     };
 
     r.onresult = (e: any) => {
@@ -57,16 +51,13 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
       }
     };
 
-    // When a session ends, restart it automatically if user hasn't stopped.
+    // iOS ends the session after each pause → restart automatically
     r.onend = () => {
       setInterim('');
       if (wantsRecording.current) {
         try {
           const next = createSession();
-          if (next) {
-            recognitionRef.current = next;
-            next.start();
-          }
+          if (next) { recognitionRef.current = next; next.start(); }
         } catch {
           wantsRecording.current = false;
           setIsRecording(false);
@@ -79,24 +70,42 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
     return r;
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setError('Голосовий ввід не підтримується цим браузером. Спробуй Chrome або Safari.');
+      setError('Голосовий ввід не підтримується. Спробуй Safari або Chrome.');
       return;
     }
 
     setError(null);
+
+    // iOS Safari needs an explicit getUserMedia call to show the
+    // microphone permission dialog before SpeechRecognition will work.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop()); // just needed the permission
+      } catch {
+        setError('Доступ до мікрофона відхилено. Дозволь у налаштуваннях браузера → Safari → Мікрофон.');
+        return;
+      }
+    }
+
     wantsRecording.current = true;
     setIsRecording(true);
 
     const r = createSession();
-    if (r) {
-      recognitionRef.current = r;
+    if (!r) return;
+    recognitionRef.current = r;
+    try {
       r.start();
+    } catch {
+      wantsRecording.current = false;
+      setIsRecording(false);
+      setError('Не вдалося запустити мікрофон. Спробуй ще раз.');
     }
   }, [createSession]);
 
