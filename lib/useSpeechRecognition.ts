@@ -1,124 +1,92 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
-interface UseSpeechRecognitionOptions {
+interface Options {
   onFinalResult: (text: string) => void;
 }
 
-export type MicStatus = 'idle' | 'requesting' | 'listening' | 'error';
+export function useSpeechRecognition({ onFinalResult }: Options) {
+  const [isRecording, setIsRecording] = useState(false);
+  const [interim, setInterim]         = useState('');
+  const [error, setError]             = useState<string | null>(null);
 
-// Detect iOS once on the client
-function detectIOS(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  );
-}
-
-export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOptions) {
-  const [status, setStatus] = useState<MicStatus>('idle');
-  const [interim, setInterim] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isIOS, setIsIOS] = useState(false);
-
-  useEffect(() => { setIsIOS(detectIOS()); }, []);
-
-  const wantsRecording = useRef(false);
+  const wantsOn        = useRef(false);
   const recognitionRef = useRef<any>(null);
-  const onFinalResultRef = useRef(onFinalResult);
-  onFinalResultRef.current = onFinalResult;
+  const onResultRef    = useRef(onFinalResult);
+  onResultRef.current  = onFinalResult;
 
   const startSession = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR || !wantsRecording.current) return;
+    if (!SR || !wantsOn.current) return;
 
-    const r = new SR();
-    r.lang = 'uk-UA';
-    r.continuous = false;
+    const r      = new SR();
+    r.lang           = 'uk-UA';
+    r.continuous     = false;   // iOS ignores true
     r.interimResults = true;
-    r.maxAlternatives = 1;
 
-    r.onstart = () => setStatus('listening');
+    r.onstart = () => { setIsRecording(true); setError(null); };
 
     r.onerror = (e: any) => {
       if (e.error === 'not-allowed') {
-        wantsRecording.current = false;
-        setStatus('error');
-        setError('Доступ відхилено.');
+        wantsOn.current = false;
+        setIsRecording(false);
+        setError('Дозволь мікрофон у браузері та спробуй ще раз.');
       }
+      // 'no-speech' / 'aborted' — let onend restart
     };
 
     r.onresult = (e: any) => {
-      let finalText = '';
-      let interimText = '';
+      let fin = '', tmp = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        if (res.isFinal) finalText += res[0].transcript.trim();
-        else interimText += res[0].transcript;
+        e.results[i].isFinal
+          ? (fin += e.results[i][0].transcript.trim())
+          : (tmp += e.results[i][0].transcript);
       }
-      if (finalText) { onFinalResultRef.current(finalText); setInterim(''); }
-      else setInterim(interimText);
+      if (fin) { onResultRef.current(fin); setInterim(''); }
+      else      setInterim(tmp);
     };
 
     r.onend = () => {
       setInterim('');
-      if (wantsRecording.current) {
-        setTimeout(() => { if (wantsRecording.current) startSession(); }, 200);
+      if (wantsOn.current) {
+        // iOS ends after each utterance — auto-restart
+        setTimeout(() => { if (wantsOn.current) startSession(); }, 100);
       } else {
-        setStatus('idle');
+        setIsRecording(false);
       }
     };
 
     recognitionRef.current = r;
-    try { r.start(); } catch {
-      wantsRecording.current = false;
-      setStatus('error');
+    try { r.start(); }
+    catch {
+      wantsOn.current = false;
+      setIsRecording(false);
       setError('Не вдалося запустити мікрофон.');
     }
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { setError('Потрібен Chrome або Firefox.'); setStatus('error'); return; }
-
-    setError(null);
-    setStatus('requesting');
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop());
-    } catch (err: any) {
-      const denied = err?.name === 'NotAllowedError';
-      setError(denied ? 'Доступ відхилено.' : `Помилка: ${err?.message}`);
-      setStatus('error');
+    if (!SR) {
+      setError('Голосовий ввід не підтримується у цьому браузері.');
       return;
     }
-
-    await new Promise(r => setTimeout(r, 300));
-    wantsRecording.current = true;
-    startSession();
+    setError(null);
+    wantsOn.current = true;
+    startSession();           // let browser ask for permission itself
   }, [startSession]);
 
   const stop = useCallback(() => {
-    wantsRecording.current = false;
+    wantsOn.current = false;
     recognitionRef.current?.stop();
-    setStatus('idle');
+    setIsRecording(false);
     setInterim('');
   }, []);
 
   const toggle = useCallback(() => {
-    if (wantsRecording.current) stop(); else start();
+    wantsOn.current ? stop() : start();
   }, [start, stop]);
 
-  return {
-    isIOS,
-    isRecording: status === 'listening' || status === 'requesting',
-    isRequesting: status === 'requesting',
-    interim,
-    error,
-    toggle,
-    status,
-  };
+  return { isRecording, interim, error, toggle };
 }
