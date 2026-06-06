@@ -27,7 +27,7 @@ export default function CapturePage() {
     }, 0);
   }, []);
 
-  const { isRecording, interim, error: micError, toggle } = useSpeechRecognition({
+  const { isRecording, isRequesting, interim, error: micError, toggle, status: micStatus } = useSpeechRecognition({
     onFinalResult: appendText,
   });
 
@@ -89,8 +89,14 @@ export default function CapturePage() {
         </div>
       </div>
 
-      {/* Recording banner */}
-      {isRecording && !micError && (
+      {/* Mic status banners */}
+      {isRequesting && (
+        <div className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-2xl flex-none">
+          <span className="text-base">🎙️</span>
+          <p className="text-sm text-amber-700 font-medium">Запит дозволу на мікрофон…</p>
+        </div>
+      )}
+      {isRecording && !isRequesting && !micError && (
         <div className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-100 rounded-2xl flex-none">
           <span className="relative flex h-3 w-3 flex-none">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />

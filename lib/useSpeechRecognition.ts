@@ -6,33 +6,44 @@ interface UseSpeechRecognitionOptions {
   onFinalResult: (text: string) => void;
 }
 
+export type MicStatus =
+  | 'idle'
+  | 'requesting'   // asking for mic permission
+  | 'listening'    // actively recording
+  | 'error';
+
 export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOptions) {
-  const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState<MicStatus>('idle');
   const [interim, setInterim] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const wantsRecording = useRef(false);
   const recognitionRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);  // kept alive while recording
   const onFinalResultRef = useRef(onFinalResult);
   onFinalResultRef.current = onFinalResult;
 
-  const createSession = useCallback(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return null;
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
 
-    const r = new SpeechRecognition();
-    r.continuous = false;      // iOS Safari ignores true
+  const startSession = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR || !wantsRecording.current) return;
+
+    const r = new SR();
+    r.continuous = false;
     r.interimResults = true;
 
     r.onerror = (e: any) => {
       if (e.error === 'not-allowed') {
         wantsRecording.current = false;
-        setIsRecording(false);
-        setError('Доступ до мікрофона відхилено. Дозволь у налаштуваннях браузера → Safari → Мікрофон.');
+        setStatus('error');
+        setError('Доступ до мікрофона відхилено. Налаштування → Safari → Мікрофон → Дозволити.');
+        stopStream();
       }
-      // 'no-speech' and 'aborted' are normal — onend will handle restart
+      // 'no-speech' / 'aborted' are normal — let onend restart
     };
 
     r.onresult = (e: any) => {
@@ -43,82 +54,82 @@ export function useSpeechRecognition({ onFinalResult }: UseSpeechRecognitionOpti
         if (res.isFinal) finalText += res[0].transcript.trim();
         else interimText += res[0].transcript;
       }
-      if (finalText) {
-        onFinalResultRef.current(finalText);
-        setInterim('');
-      } else {
-        setInterim(interimText);
-      }
+      if (finalText) { onFinalResultRef.current(finalText); setInterim(''); }
+      else setInterim(interimText);
     };
 
-    // iOS ends the session after each pause → restart automatically
+    r.onstart = () => setStatus('listening');
+
     r.onend = () => {
       setInterim('');
       if (wantsRecording.current) {
-        try {
-          const next = createSession();
-          if (next) { recognitionRef.current = next; next.start(); }
-        } catch {
-          wantsRecording.current = false;
-          setIsRecording(false);
-        }
+        // iOS ends every session after a pause — restart after brief delay
+        setTimeout(() => {
+          if (wantsRecording.current) startSession();
+        }, 150);
       } else {
-        setIsRecording(false);
+        setStatus('idle');
+        stopStream();
       }
     };
 
-    return r;
-  }, []);
+    recognitionRef.current = r;
+    try { r.start(); } catch (e) {
+      console.error('r.start() failed', e);
+      wantsRecording.current = false;
+      setStatus('error');
+      setError('Не вдалося запустити мікрофон — спробуй ще раз.');
+      stopStream();
+    }
+  }, [stopStream]);
 
   const start = useCallback(async () => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setError('Голосовий ввід не підтримується. Спробуй Safari або Chrome.');
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setError('Web Speech API не підтримується. Потрібен Safari 14.5+ або Chrome.');
+      setStatus('error');
       return;
     }
 
     setError(null);
+    setStatus('requesting');
 
-    // iOS Safari needs an explicit getUserMedia call to show the
-    // microphone permission dialog before SpeechRecognition will work.
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(t => t.stop()); // just needed the permission
-      } catch {
-        setError('Доступ до мікрофона відхилено. Дозволь у налаштуваннях браузера → Safari → Мікрофон.');
-        return;
-      }
+    // iOS Safari requires getUserMedia to show the permission dialog
+    // AND we keep the stream alive — closing it can freeze recognition on iOS
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;           // keep alive!
+    } catch (err: any) {
+      const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+      setError(denied
+        ? 'Доступ до мікрофона відхилено. Налаштування → Safari → Мікрофон → Дозволити.'
+        : `Помилка мікрофона: ${err?.message ?? err}`);
+      setStatus('error');
+      return;
     }
 
     wantsRecording.current = true;
-    setIsRecording(true);
-
-    const r = createSession();
-    if (!r) return;
-    recognitionRef.current = r;
-    try {
-      r.start();
-    } catch {
-      wantsRecording.current = false;
-      setIsRecording(false);
-      setError('Не вдалося запустити мікрофон. Спробуй ще раз.');
-    }
-  }, [createSession]);
+    startSession();
+  }, [startSession]);
 
   const stop = useCallback(() => {
     wantsRecording.current = false;
     recognitionRef.current?.stop();
-    setIsRecording(false);
+    setStatus('idle');
     setInterim('');
-  }, []);
+    stopStream();
+  }, [stopStream]);
 
   const toggle = useCallback(() => {
     if (wantsRecording.current) stop(); else start();
   }, [start, stop]);
 
-  return { isRecording, interim, error, toggle };
+  return {
+    isRecording: status === 'listening' || status === 'requesting',
+    isRequesting: status === 'requesting',
+    interim,
+    error,
+    toggle,
+    status,
+  };
 }
