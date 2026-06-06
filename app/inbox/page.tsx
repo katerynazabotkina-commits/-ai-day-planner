@@ -29,10 +29,23 @@ function TaskCard({ task }: { task: Task }) {
         )}
       </button>
 
-      {/* Text */}
-      <p className={`flex-1 text-base text-gray-800 leading-snug ${task.done ? 'line-through text-gray-400' : ''}`}>
-        {task.text}
-      </p>
+      {/* Text + meta */}
+      <div className="flex-1 min-w-0">
+        <p className={`text-base text-gray-800 leading-snug ${task.done ? 'line-through text-gray-400' : ''}`}>
+          {task.text}
+        </p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {task.priority === 'must' && (
+            <span className="text-[11px] font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-md">must</span>
+          )}
+          {task.estimateMin > 0 && (
+            <span className="text-[11px] text-gray-400">{task.estimateMin} хв</span>
+          )}
+          {task.deadline && (
+            <span className="text-[11px] text-indigo-400">{task.deadline}</span>
+          )}
+        </div>
+      </div>
 
       {/* Move to Today */}
       <button

@@ -5,6 +5,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 export interface Task {
   id: string;
   text: string;
+  priority: 'must' | 'nice';
+  estimateMin: number;
+  deadline: string | null;
   done: boolean;
   inToday: boolean;
   createdAt: number;
@@ -13,6 +16,7 @@ export interface Task {
 interface Ctx {
   tasks: Task[];
   addTasks: (texts: string[]) => void;
+  addParsedTasks: (parsed: { title: string; priority: 'must' | 'nice'; estimateMin: number; deadline: string | null }[]) => void;
   toggleDone: (id: string) => void;
   toggleToday: (id: string) => void;
   deleteTask: (id: string) => void;
@@ -44,6 +48,23 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const newTasks: Task[] = texts.map((text, i) => ({
       id: `${Date.now()}-${i}`,
       text: text.trim(),
+      priority: 'nice' as const,
+      estimateMin: 30,
+      deadline: null,
+      done: false,
+      inToday: false,
+      createdAt: Date.now(),
+    }));
+    setTasks(prev => [...newTasks, ...prev]);
+  };
+
+  const addParsedTasks = (parsed: { title: string; priority: 'must' | 'nice'; estimateMin: number; deadline: string | null }[]) => {
+    const newTasks: Task[] = parsed.map((p, i) => ({
+      id: `${Date.now()}-${i}`,
+      text: p.title,
+      priority: p.priority,
+      estimateMin: p.estimateMin,
+      deadline: p.deadline,
       done: false,
       inToday: false,
       createdAt: Date.now(),
@@ -61,7 +82,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     setTasks(prev => prev.filter(t => t.id !== id));
 
   return (
-    <TaskContext.Provider value={{ tasks, addTasks, toggleDone, toggleToday, deleteTask }}>
+    <TaskContext.Provider value={{ tasks, addTasks, addParsedTasks, toggleDone, toggleToday, deleteTask }}>
       {children}
     </TaskContext.Provider>
   );
