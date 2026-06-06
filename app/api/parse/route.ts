@@ -1,0 +1,100 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { NextRequest, NextResponse } from 'next/server';
+
+const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+
+// Stable system prompt — marked for prompt caching.
+// (Haiku 4.5 needs ≥4096 tokens to cache; marker is there for when prompt grows.)
+const SYSTEM = `You extract actionable tasks from a user's brain dump.
+Return ONLY a raw JSON array — no markdown fences, no explanation, nothing else.
+
+Each element must have exactly these fields:
+{
+  "title": string,               // concise action title, same language as input, ≤60 chars
+  "priority": "must" | "nice",   // "must" = urgent/important, "nice" = optional/someday
+  "estimateMin": number,         // estimated minutes to complete, integer ≥ 5
+  "deadline": "YYYY-MM-DD" | null  // date if explicitly or implicitly mentioned, else null
+}
+
+Rules:
+- Extract only concrete actionable tasks, skip vague musings
+- Infer priority from words like: срочно, важливо, треба, must, urgent, deadline
+- Infer deadline from: сьогодні, завтра, до п'ятниці, next week, by Monday, etc.
+- Resolve relative dates using today's date (provided by the user)
+- If no tasks found return: []`;
+
+export interface ParsedTask {
+  title: string;
+  priority: 'must' | 'nice';
+  estimateMin: number;
+  deadline: string | null;
+}
+
+export async function POST(request: NextRequest) {
+  let dump: string;
+  try {
+    const body = await request.json();
+    dump = typeof body?.dump === 'string' ? body.dump.trim() : '';
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  if (!dump) {
+    return NextResponse.json({ error: 'dump is required and must be a non-empty string' }, { status: 400 });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1024,
+      system: [
+        {
+          type: 'text',
+          text: SYSTEM,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: `Today is ${today}.\n\n${dump}`,
+        },
+      ],
+    });
+
+    const textBlock = response.content.find(b => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      return NextResponse.json({ error: 'Empty response from AI' }, { status: 502 });
+    }
+
+    let tasks: unknown;
+    try {
+      tasks = JSON.parse(textBlock.text.trim());
+    } catch {
+      return NextResponse.json(
+        { error: 'AI returned invalid JSON', raw: textBlock.text },
+        { status: 502 },
+      );
+    }
+
+    if (!Array.isArray(tasks)) {
+      return NextResponse.json(
+        { error: 'AI returned non-array JSON', raw: textBlock.text },
+        { status: 502 },
+      );
+    }
+
+    return NextResponse.json(tasks as ParsedTask[]);
+  } catch (error) {
+    if (error instanceof Anthropic.AuthenticationError) {
+      return NextResponse.json({ error: 'Invalid ANTHROPIC_API_KEY' }, { status: 401 });
+    }
+    if (error instanceof Anthropic.RateLimitError) {
+      return NextResponse.json({ error: 'Rate limited — try again shortly' }, { status: 429 });
+    }
+    console.error('[api/parse]', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
