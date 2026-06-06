@@ -60,7 +60,9 @@ export async function POST(request: NextRequest) {
 
     let tasks: unknown;
     try {
-      tasks = JSON.parse(textBlock.text.trim());
+      // Strip markdown code fences if the model wraps the JSON in ```json ... ```
+      const raw = textBlock.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      tasks = JSON.parse(raw);
     } catch {
       return NextResponse.json(
         { error: 'AI returned invalid JSON', raw: textBlock.text },
