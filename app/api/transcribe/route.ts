@@ -1,17 +1,16 @@
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 
-// Groq gives free Whisper access — just swap the base URL and key.
-// Sign up at console.groq.com, no credit card needed.
-const client = new OpenAI({
-  apiKey:  process.env.GROQ_API_KEY ?? '',
-  baseURL: 'https://api.groq.com/openai/v1',
-});
-
 export async function POST(request: NextRequest) {
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: 'GROQ_API_KEY не налаштований' }, { status: 500 });
   }
+
+  // Groq gives free Whisper access — sign up at console.groq.com, no credit card needed.
+  const client = new OpenAI({
+    apiKey:  process.env.GROQ_API_KEY,
+    baseURL: 'https://api.groq.com/openai/v1',
+  });
 
   let formData: FormData;
   try {
